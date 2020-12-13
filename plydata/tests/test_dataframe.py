@@ -19,8 +19,10 @@ from plydata import (define, create, sample_n, sample_frac, select,
                      rename_all, rename_at, rename_if,
                      select_all, select_at, select_if,
                      summarize_all, summarize_at, summarize_if,
+                     # Two table verbs
                      inner_join, outer_join, left_join, right_join,
-                     anti_join, semi_join)
+                     anti_join, semi_join,
+                     )
 
 from plydata.options import set_option
 from plydata.types import GroupedDataFrame
@@ -82,6 +84,15 @@ def test_define():
               >> group_by('x')
               >> define(y='x'))
     assert all(result['x'] == result['y'])
+
+    # Do not modify group column
+    with pytest.raises(ValueError):
+        df >> group_by('x') >> define(x='2*x')
+
+    # Series-like iterables
+    # https://github.com/has2k1/plydata/issues/21
+    result = df >> define(y=pd.Series(y))
+    assert all(result['y'] == y)
 
 
 def test_create():
@@ -149,13 +160,13 @@ def test_select():
     assert len(result.columns) == 3
 
     result = df >> select('caracal', endswith='ar', contains='ee',
-                          matches='\w+opa')
+                          matches=r'\w+opa')
     assert len(result.columns) == 5
 
     result = df >> select(contains=['ee', 'ion', '23'])
     assert len(result.columns) == 2
 
-    result = df >> select(matches=('\w+opa', '\w+r$'))
+    result = df >> select(matches=(r'\w+opa', r'\w+r$'))
     assert len(result.columns) == 4
 
     # grouped on columns are never dropped
@@ -176,7 +187,7 @@ def test_select():
     df[123] = 1
     df[456] = 2
     df[789] = 3
-    pattern = re.compile('\w+opa')
+    pattern = re.compile(r'\w+opa')
     result = df >> select(startswith='t', matches=pattern)
     assert len(result.columns) == 2
 
@@ -193,6 +204,25 @@ def test_select():
     result = df >> select()
     assert len(result.columns) == 0
     assert len(result.index) == len(df.index)
+    df = pd.DataFrame({
+        'lion': x, 'tiger': x, 'cheetah': x,
+        'leopard': x, 'jaguar': x, 'cougar': x,
+        'caracal': x})
+
+    # Exclude with minus
+    result = df >> select('-jaguar', '-lion')
+    assert 'jaguar' not in result
+    assert 'lion' not in result
+
+    result = df >> select('-jaguar', '-lion', 'jaguar')
+    assert result.columns[-1] == 'jaguar'
+
+    # Wrong way to exclude
+    with pytest.raises(KeyError):
+        df >> select('jaguar', '-lion')
+
+    with pytest.raises(TypeError):
+        select.from_columns({})
 
 
 def test_rename():
@@ -251,13 +281,16 @@ def test_arrange():
     I = pd.Index
 
     result = df >> arrange('x')
-    assert result.index.equals(I([5, 0, 2, 3, 4, 1]))
+    assert all(result.x == [0, 1, 2, 2, 4, 5])
+    assert all(result.y == [6, 1, 3, 4, 5, 2])
 
     result = df >> arrange('x', '-y')
-    assert result.index.equals(I([5, 0, 3, 2, 4, 1]))
+    assert all(result.x == [0, 1, 2, 2, 4, 5])
+    assert all(result.y == [6, 1, 4, 3, 5, 2])
 
     result = df >> arrange('np.sin(y)')
-    assert result.index.equals(I([4, 3, 5, 2, 0, 1]))
+    assert all(result.x == [4, 2, 0, 2, 1, 5])
+    assert all(result.y == [5, 4, 6, 3, 1, 2])
 
     # Branches
     result = df >> arrange()
@@ -265,6 +298,28 @@ def test_arrange():
 
     result = df >> arrange('x') >> arrange('y')  # already sorted
     assert result.index.equals(df.index)
+
+    # Do not reset index
+    result = df >> arrange('x', reset_index=False)
+    assert result.index.equals(I([5, 0, 2, 3, 4, 1]))
+
+    # Bad index
+    df_bad = df.copy()
+    df_bad.index = [0, 1, 0, 1, 0, 1]
+    result = df_bad >> arrange('x')
+    assert all(result.x == [0, 1, 2, 2, 4, 5])
+
+    result = df_bad >> arrange('x', '-y')
+    assert all(result.x == [0, 1, 2, 2, 4, 5])
+    assert all(result.y == [6, 1, 4, 3, 5, 2])
+
+    # A computation on a non-increasing index
+    df2 = pd.DataFrame({
+        'x': [0, 1, 2, 2, 4, 5],
+        'y': [6, 1, 3, 4, 5, 2]
+    }, index=[5, 0, 2, 3, 4, 1])
+    result = df2 >> arrange('-y')
+    assert all(result.y == [6, 5, 4, 3, 2, 1])
 
 
 def test_group_by():
@@ -290,6 +345,10 @@ def test_group_by():
 
     result = df >> group_by('x', 'w') >> group_by('y', 'x', add_=True)
     assert result.plydata_groups == ['x', 'w', 'y']
+
+    result = df >> group_by(x='2*x', y='2*y')
+    assert result.plydata_groups == ['x', 'y']
+    npt.assert_array_equal(result['x'], 2*df['x'])
 
 
 def test_ungroup():
@@ -513,6 +572,9 @@ def test_query():
     result = df >> query('x > @c')
     assert all(result.loc[:, 'x'] == [4, 5])
 
+    result = df >> query('x % 2 == 0', reset_index=False)
+    assert result.index.equals(pd.Index([0, 2, 4]))
+
 
 def test_do():
     df = pd.DataFrame({'x': [1, 2, 2, 3],
@@ -523,7 +585,7 @@ def test_do():
 
     def least_squares(gdf):
         X = np.vstack([gdf.x, np.ones(len(gdf))]).T
-        (m, c), _, _, _ = np.linalg.lstsq(X, gdf.y)
+        (m, c), _, _, _ = np.linalg.lstsq(X, gdf.y, None)
         return pd.DataFrame({'slope': [m], 'intercept': c})
 
     def slope(x, y):
@@ -1058,6 +1120,10 @@ def test_mutate_at():
     with pytest.raises(TypeError):
         df >> mutate_at(('x', 'y', 'z'), (object(),))
 
+    # Do not modify groups
+    with pytest.raises(ValueError):
+        df >> group_by('x') >> mutate_at(('x', 'y'), np.sin)
+
 
 def test_mutate_if():
     df = pd.DataFrame({
@@ -1249,6 +1315,9 @@ def test_select_all():
     result = df >> select_all(str.capitalize)
     assert all(result.columns == ['Alpha', 'Beta', 'Theta', 'X', 'Y', 'Z'])
 
+    with pytest.raises(ValueError):
+        df >> select_all((str.capitalize, str.upper))
+
 
 def test_select_at():
     df = pd.DataFrame({
@@ -1271,6 +1340,12 @@ def test_select_at():
               >> select_at(('x', 'beta', 'alpha'), str.upper))
     assert all(result.columns == ['beta', 'X', 'ALPHA'])
 
+    with pytest.raises(ValueError):
+        df >> select_at(('x', 'beta', 'alpha'), (str.capitalize, str.upper))
+
+    with pytest.raises(KeyError):
+        df >> select_at(('missing', 'alpha', 'x'), str.capitalize)
+
 
 def test_select_if():
     df = pd.DataFrame({
@@ -1285,6 +1360,9 @@ def test_select_if():
     result = df >> select_if('is_numeric', str.capitalize)
     assert all(result.columns == ['X', 'Y', 'Z'])
 
+    with pytest.raises(ValueError):
+        df >> select_if('is_numeric', (str.capitalize, str.upper))
+
 
 def test_rename_all():
     df = pd.DataFrame({
@@ -1298,6 +1376,9 @@ def test_rename_all():
 
     result = df >> group_by('alpha') >> rename_all(str.capitalize)
     assert all(result.columns == ['alpha', 'Beta', 'Theta', 'X', 'Y', 'Z'])
+
+    with pytest.raises(ValueError):
+        df >> rename_all((str.capitalize, str.upper))
 
 
 def test_rename_at():
@@ -1316,6 +1397,9 @@ def test_rename_at():
               >> rename_at(('alpha', 'beta', 'x'), str.upper))
     assert all(result.columns == ['ALPHA', 'beta', 'theta', 'X', 'y', 'z'])
 
+    with pytest.raises(ValueError):
+        df >> rename_at(('alpha', 'beta', 'x'), (str.capitalize, str.upper))
+
 
 def test_rename_if():
     df = pd.DataFrame({
@@ -1332,6 +1416,9 @@ def test_rename_if():
               >> rename_if('is_numeric', str.capitalize))
     assert all(result.columns == ['alpha', 'beta', 'theta', 'X', 'y', 'Z'])
 
+    with pytest.raises(ValueError):
+        df >> rename_if('is_numeric', (str.capitalize, str.upper))
+
 
 def test_query_all():
     df = pd.DataFrame({
@@ -1346,6 +1433,9 @@ def test_query_all():
     # per column.
     result = df >> query_all(any_vars='pdtypes.is_integer_dtype({_})')
     assert result.equals(df)
+
+    result = df >> query_all(any_vars='({_} == 4)', reset_index=False)
+    assert result.index.equals(pd.Index([2, 3]))
 
     # branches
     with pytest.raises(ValueError):

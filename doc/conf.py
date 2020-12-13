@@ -30,9 +30,11 @@ if on_rtd:
     MOCK_MODULES = [
         'pandas',
         'pandas.core',
+        'pandas.core.algorithms',
         'pandas.core.common',
         'pandas.api',
-        'pandas.api.types']
+        'pandas.api.types',
+    ]
     for mod_name in MOCK_MODULES:
         sys.modules[mod_name] = mock.Mock()
     pprint(os.environ)
@@ -41,7 +43,7 @@ if on_rtd:
 # -- General configuration ------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
-needs_sphinx = '1.6.1'
+needs_sphinx = '2.2.0'
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
@@ -57,11 +59,12 @@ extensions = [
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
     'sphinx.ext.autosummary',
-    'sphinx.ext.napoleon',
     'sphinx.ext.autosectionlabel',
 
     'sphinxext.inline_code_highlight',
-    'nbsphinx'
+    'nbsphinx',
+    'numpydoc',
+
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -78,7 +81,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'plydata'
-copyright = '2017, Hassan Kibirige'
+copyright = '2020, Hassan Kibirige'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -96,7 +99,7 @@ except ImportError:
 if on_rtd:
     import re
     version = version.rstrip('.dirty')
-    version = re.sub('\+0\..+', '', version)
+    version = re.sub(r'\+0\..+', '', version)
     version
 
 # The full version, including alpha/beta/rc tags.
@@ -211,7 +214,13 @@ html_static_path = ['_static']
 # html_use_smartypants = True
 
 # Custom sidebar templates, maps document names to template names.
-# html_sidebars = {}
+html_sidebars = {
+    # Default to no sidebar
+    '**': [],
+
+    # local table of contents for the API page
+    'api': ['localtoc.html']
+}
 
 # Additional templates that should be rendered to pages, maps page names to
 # template names.
@@ -317,7 +326,7 @@ texinfo_documents = [
    'plydata Documentation',
    'Hassan Kibirige',
    'plydata',
-   'One line description of project.',
+   'Grammar for data manipulation',
    'Miscellaneous'),
 ]
 
@@ -338,7 +347,7 @@ texinfo_documents = [
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3/', None),
     'numpy': ('https://docs.scipy.org/doc/numpy', None),
-    'pandas': ('http://pandas.pydata.org/pandas-docs/stable/', None),
+    'pandas': ('https://pandas.pydata.org/pandas-docs/stable/', None),
 }
 
 
@@ -346,12 +355,39 @@ intersphinx_mapping = {
 autodoc_member_order = 'bysource'
 autosummary_generate = True
 nbsphinx_execute = 'never'
+autosectionlabel_prefix_document = True
+autosectionlabel_maxdepth = 2
 
 extlinks = {
     'issue': ('https://github.com/has2k1/plydata/issues/%s', 'GH')
 }
 
+# numpydoc
+numpydoc_show_class_members = False
+numpydoc_class_members_toctree = False
+numpydoc_xref_param_type = True
+numpydoc_xref_aliases = {
+    # python
+    'sequence': ':term:`python:sequence`',
+    'iterable': ':term:`python:iterable`',
+    'string': 'str',
+    'tuples': 'tuple',
+    'boolean': 'bool',
+    # numpy
+    'array': 'numpy.ndarray',
+    'np.array': 'numpy.ndarray',
+    'ndarray': 'numpy.ndarray',
+    'array-like': ':term:`array-like<numpy:array_like>`',
+    'array_like': ':term:`numpy:array_like`',
+    # pandas
+    'dataframe': 'pandas.DataFrame',
+    'DataFrame': 'pandas.DataFrame',
+    'Series': 'pandas.Series',
+    'series': 'pandas.Series',
+}
+numpydoc_xref_ignore = {'type', 'optional', 'default'}
+
 
 def setup(app):
-    app.add_javascript('copybutton.js')
-    app.add_stylesheet('custom.css')
+    app.add_js_file('copybutton.js')
+    app.add_css_file('custom.css')

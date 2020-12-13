@@ -68,8 +68,8 @@ class inner_join(_join):
     0    one       1       1
     1  three       3       3
 
-    Note
-    ----
+    Notes
+    -----
     Groups are ignored for the purpose of joining, but the result
     preserves the grouping of x.
     """
@@ -118,8 +118,8 @@ class outer_join(_join):
     2  three     3.0     3.0
     3   four     NaN     4.0
 
-    Note
-    ----
+    Notes
+    -----
     Groups are ignored for the purpose of joining, but the result
     preserves the grouping of x.
     """
@@ -167,8 +167,8 @@ class left_join(_join):
     1    two       2     NaN
     2  three       3     3.0
 
-    Note
-    ----
+    Notes
+    -----
     Groups are ignored for the purpose of joining, but the result
     preserves the grouping of x.
     """
@@ -213,11 +213,11 @@ class right_join(_join):
     >>> right_join(df1, df2, on='col1')
         col1  col2_x  col2_y
     0    one     1.0       1
-    1  three     3.0       3
-    2   four     NaN       4
+    1   four     NaN       4
+    2  three     3.0       3
 
-    Note
-    ----
+    Notes
+    -----
     Groups are ignored for the purpose of joining, but the result
     preserves the grouping of x.
     """
@@ -263,8 +263,8 @@ class anti_join(_join):
         col1  col2
     1    two     2
 
-    Note
-    ----
+    Notes
+    -----
     Groups are ignored for the purpose of joining, but the result
     preserves the grouping of x.
     """
@@ -327,8 +327,8 @@ class semi_join(_join):
     1  three       3       3
     2  three       3       3
 
-    Note
-    ----
+    Notes
+    -----
     Groups are ignored for the purpose of joining, but the result
     preserves the grouping of x.
     """

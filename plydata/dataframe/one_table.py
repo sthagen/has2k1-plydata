@@ -8,6 +8,7 @@ import pandas as pd
 
 from ..types import GroupedDataFrame
 from ..options import get_option
+from ..operators import register_implementations
 from ..utils import Q, get_empty_env, regular_index, unique
 from .common import Evaluator, Selector
 from .common import _get_groups, _get_base_dataframe
@@ -19,6 +20,30 @@ __all__ = ['arrange', 'create', 'define', 'distinct', 'do',
            'ungroup', 'unique']
 
 
+def _check_modify_groups(verb):
+    """
+    Raise ValueError if expressions modify existing groups
+
+    Parameters
+    ----------
+    verb : DataOperator
+        Verb to modify dataframe
+    """
+    groups = _get_groups(verb)
+
+    # Data has no groups or verb authorises modification
+    if not groups:
+        return
+
+    new_cols = [e.column for e in verb.expressions if e.column != e.stmt]
+    overwritten_groups = list(set(new_cols) & set(groups))
+    if overwritten_groups:
+        raise ValueError(
+            "Columns {} cannot be modified because they are "
+            "grouping variables.".format(overwritten_groups)
+        )
+
+
 def define(verb):
     if not get_option('modify_input_data'):
         verb.data = verb.data.copy()
@@ -26,6 +51,7 @@ def define(verb):
     if not verb.expressions:
         return verb.data
 
+    _check_modify_groups(verb)
     verb.env = verb.env.with_outer_namespace(_outer_namespace)
     with regular_index(verb.data):
         new_data = Evaluator(verb).process()
@@ -82,14 +108,25 @@ def arrange(verb):
         df = Evaluator(verb, keep_index=True).process()
 
     if len(df.columns):
-        sorted_index = df.sort_values(by=list(df.columns)).index
-        data = verb.data.loc[sorted_index, :]
+        # The index is also rearranged, but to avoid issues with
+        # duplicate index values, we work with a regular index
+        original_index = verb.data.index
+        with regular_index(verb.data, df):
+            sorted_index = df.sort_values(by=list(df.columns)).index
+            data = verb.data.loc[sorted_index, :]
+
+        if verb.reset_index:
+            data.reset_index(drop=True, inplace=True)
+        else:
+            data.index = original_index[sorted_index]
     else:
         data = verb.data
+
     return data
 
 
 def group_by(verb):
+    verb._overwrite_groups = True
     verb.data = define(verb)
 
     copy = not get_option('modify_input_data')
@@ -141,22 +178,34 @@ def summarize(verb):
 
 
 def query(verb):
-    data = verb.data.query(
-        verb.expression,
-        global_dict=verb.env.namespace,
-        **verb.kwargs)
-    data._is_copy = None
+    if isinstance(verb.data, GroupedDataFrame):
+        grouper = verb.data.groupby()
+        dfs = [
+            gdf.query(
+                verb.expression,
+                global_dict=verb.env.namespace,
+                **verb.kwargs
+            )
+            for _, gdf in grouper
+        ]
+        data = pd.concat(dfs, axis=0, ignore_index=False, copy=False)
+        data.plydata_groups = list(verb.data.plydata_groups)
+    else:
+        data = verb.data.query(
+            verb.expression,
+            global_dict=verb.env.namespace,
+            **verb.kwargs
+        )
+        data._is_copy = None
+
+    if verb.reset_index:
+        data.reset_index(drop=True, inplace=True)
     return data
 
 
 def do(verb):
     verb.env = get_empty_env()
     keep_index = verb.single_function
-    if verb.single_function:
-        if isinstance(verb.expressions[0].stmt, str):
-            raise TypeError(
-                "A single function for `do` cannot be a string")
-
     with regular_index(verb.data):
         data = Evaluator(verb, keep_index=keep_index).process()
 
@@ -251,3 +300,5 @@ _outer_namespace = {
 
 # Aliases
 mutate = define
+
+register_implementations(globals(), __all__, 'dataframe')

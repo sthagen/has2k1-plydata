@@ -52,8 +52,8 @@ class define(DataOperator):
     1  2    8
     2  3   12
 
-    Note
-    ----
+    Notes
+    -----
     If :obj:`plydata.options.modify_input_data` is ``True``,
     :class:`define` will modify the original dataframe.
     """
@@ -237,6 +237,9 @@ class select(DataOperator):
     names : tuple, optional
         Names of columns in dataframe. Normally, they are strings
         can include slice e.g :py:`slice('col2', 'col5')`.
+        You can also exclude columns by prepending a ``-`` e.g
+        py:`select('-col1')`, will include all columns minus than
+        *col1*.
     startswith : str or tuple, optional
         All column names that start with this string will be included.
     endswith : str or tuple, optional
@@ -270,7 +273,7 @@ class select(DataOperator):
     0        1    1     1
     1        2    2     2
     2        3    3     3
-    >>> df >> select('bell',  matches='\w+tle$')
+    >>> df >> select('bell',  matches=r'\\w+tle$')
        bell  whistle
     0     1        1
     1     2        2
@@ -291,6 +294,29 @@ class select(DataOperator):
     0  1  1  1  1  1
     1  2  2  2  2  2
     2  3  3  3  3  3
+
+    You can exclude columns by prepending ``-``
+
+    >>> df >> select('-a', '-c', '-e')
+       b  d  f  g  h
+    0  1  1  1  1  1
+    1  2  2  2  2  2
+    2  3  3  3  3  3
+
+    Remove and place column at the end
+
+    >>> df >> select('-a', '-c', '-e', 'a')
+       b  d  f  g  h  a
+    0  1  1  1  1  1  1
+    1  2  2  2  2  2  2
+    2  3  3  3  3  3  3
+
+    Notes
+    -----
+    To exclude columns by prepending a minus, the first column
+    passed to :class:`select` must be prepended with minus.
+    :py:`select('-a', 'c')` will exclude column ``a``, while
+    :py:`select('c', '-a')` will not exclude column ``a``.
     """
     def __init__(self, *names, startswith=None, endswith=None,
                  contains=None, matches=None, drop=False):
@@ -310,6 +336,43 @@ class select(DataOperator):
         self.contains = as_tuple(contains)
         self.matches = as_tuple(matches)
         self.drop = drop
+
+    @staticmethod
+    def from_columns(*columns):
+        """
+        Create a select verb from the columns specification
+
+        Parameters
+        ----------
+        *columns : list-like | select | str | slice
+            Column names to be gathered and whose contents will
+            make values.
+
+        Return
+        ------
+        out : select
+            Select verb representation of the columns.
+        """
+        from .helper_verbs import select_all, select_at, select_if
+        n = len(columns)
+        if n == 0:
+            return select_all()
+        elif n == 1:
+            obj = columns[0]
+            if isinstance(obj, (select, select_all, select_at, select_if)):
+                return obj
+            elif isinstance(obj, slice):
+                return select(obj)
+            elif isinstance(obj, (list, tuple)):
+                return select(*obj)
+            elif isinstance(obj, str):
+                return select(obj)
+            else:
+                raise TypeError(
+                    "Unrecognised type {}".format(type(obj))
+                )
+        else:
+            return select(*columns)
 
 
 class rename(DataOperator):
@@ -347,8 +410,8 @@ class rename(DataOperator):
     1     2        2    2     2
     2     3        3    3     3
 
-    Note
-    ----
+    Notes
+    -----
     If :obj:`plydata.options.modify_input_data` is ``True``,
     :class:`rename` will modify the original dataframe.
     """
@@ -470,6 +533,9 @@ class arrange(DataOperator):
         Useful when not using the ``>>`` operator.
     args : tuple
         Columns/expressions to sort by.
+    reset_index : bool, optional (default: True)
+        If ``True``, the index is reset to a sequential range index.
+        If ``False``, the original index is maintained.
 
     Examples
     --------
@@ -479,33 +545,34 @@ class arrange(DataOperator):
     ...                    'y': [1, 2, 3, 4, 5, 6]})
     >>> df >> arrange('x')
        x  y
-    5  0  6
-    0  1  1
+    0  0  6
+    1  1  1
     2  2  3
     3  2  4
     4  4  5
-    1  5  2
+    5  5  2
     >>> df >> arrange('x', '-y')
        x  y
-    5  0  6
-    0  1  1
-    3  2  4
-    2  2  3
+    0  0  6
+    1  1  1
+    2  2  4
+    3  2  3
     4  4  5
-    1  5  2
+    5  5  2
     >>> df >> arrange('np.sin(y)')
        x  y
-    4  4  5
-    3  2  4
-    5  0  6
-    2  2  3
-    0  1  1
-    1  5  2
+    0  4  5
+    1  2  4
+    2  0  6
+    3  2  3
+    4  1  1
+    5  5  2
     """
     expressions = None
 
-    def __init__(self, *args):
+    def __init__(self, *args, reset_index=True):
         self.set_env_from_verb_init()
+        self.reset_index = reset_index
         name_gen = ('col_{}'.format(x) for x in range(100))
         self.expressions = [
             Expression(stmt, col)
@@ -578,8 +645,8 @@ class group_by(define):
     5    5       1  6
     6    4       5  5
 
-    Note
-    ----
+    Notes
+    -----
     If :obj:`plydata.options.modify_input_data` is ``True``,
     :class:`group_by` will modify the original dataframe.
     """
@@ -783,6 +850,9 @@ class query(DataOperator):
         `log`, `expm1`, `log1p`, `sqrt`, `sinh`, `cosh`, `tanh`,
         `arcsin`, `arccos`, `arctan`, `arccosh`, `arcsinh`,
         `arctanh`, `abs` and `arctan2`.
+    reset_index : bool, optional (default: True)
+        If ``True``, the index is reset to a sequential range index.
+        If ``False``, the original index is maintained.
     kwargs : dict
         See the documentation for :func:`pandas.eval` for complete
         details on the keyword arguments accepted by
@@ -796,29 +866,50 @@ class query(DataOperator):
     >>> df >> query('x % 2 == 0')
        x  y
     0  0  0
-    2  2  1
-    4  4  2
+    1  2  1
+    2  4  2
 
     >>> df >> query('x % 2 == 0 & y > 0')
        x  y
-    2  2  1
-    4  4  2
+    0  2  1
+    1  4  2
 
     By default, Bitwise operators ``&`` and ``|`` have the same
     precedence as the booleans ``and`` and ``or``.
 
     >>> df >> query('x % 2 == 0 and y > 0')
        x  y
-    2  2  1
-    4  4  2
+    0  2  1
+    1  4  2
+
+    ``query`` works within groups
+
+    >>> df >> query('x == x.min()')
+       x  y
+    0  0  0
+
+    >>> df >> group_by('y') >> query('x == x.min()')
+    groups: ['y']
+       x  y
+    0  0  0
+    1  2  1
+    2  4  2
+    3  5  3
 
     For more information see :meth:`pandas.DataFrame.query`. To query
     rows and columns with ``NaN`` values, use :class:`dropna`
+
+    Notes
+    -----
+    :class:`~plydata.one_table_verbs.query` is the equivalent of
+    dplyr's `filter` verb but with slightly different python syntax
+    the expressions.
     """
     expression = None
 
-    def __init__(self, expr, **kwargs):
+    def __init__(self, expr, reset_index=True, **kwargs):
         self.set_env_from_verb_init()
+        self.reset_index = reset_index
         self.expression = expr
         self.kwargs = kwargs
 
@@ -860,7 +951,7 @@ class do(DataOperator):
 
     >>> def least_squares(gdf):
     ...     X = np.vstack([gdf.x, np.ones(len(gdf))]).T
-    ...     (m, c), _, _, _ = np.linalg.lstsq(X, gdf.y)
+    ...     (m, c), _, _, _ = np.linalg.lstsq(X, gdf.y, None)
     ...     return pd.DataFrame({'intercept': c, 'slope': [m]})
 
     Define functions that take x and y values and compute the
@@ -897,8 +988,8 @@ class do(DataOperator):
     that the group columns (``z`` in the above cases) are included in
     the result.
 
-    Note
-    ----
+    Notes
+    -----
     You cannot have both a position argument and keyword
     arguments.
     """
@@ -1038,8 +1129,8 @@ class pull(DataOperator):
     >>> df >> pull(-1, True)
     array([7, 8, 9])
 
-    Note
-    ----
+    Notes
+    -----
     Always returns a numpy array.
 
     If :obj:`plydata.options.modify_input_data` is ``True``,
@@ -1098,8 +1189,8 @@ class slice_rows(DataOperator):
 
     respectively.
 
-    Note
-    ----
+    Notes
+    -----
     If :obj:`plydata.options.modify_input_data` is ``True``,
     :class:`slice_rows` will not make a copy the original dataframe.
     """

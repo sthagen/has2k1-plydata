@@ -8,7 +8,6 @@ from .one_table_verbs import select, group_by
 __all__ = ['call', 'tally', 'count', 'add_tally', 'add_count',
            'arrange_all', 'arrange_at', 'arrange_if',
            'create_all', 'create_at', 'create_if',
-           'create_all', 'create_at', 'create_if',
            'group_by_all', 'group_by_at', 'group_by_if',
            'mutate_all', 'mutate_at', 'mutate_if',
            'query_all', 'query_at', 'query_if',
@@ -19,6 +18,8 @@ __all__ = ['call', 'tally', 'count', 'add_tally', 'add_count',
            'summarise_all', 'summarise_at', 'summarise_if',
            'transmute_all', 'transmute_at', 'transmute_if',
            ]
+
+MANY = float('inf')
 
 
 class call(DataOperator):
@@ -520,16 +521,26 @@ class _all(DataOperator):
         passed to *all* functions.
     """
     selector = '_all'
+    n_functions = MANY   # Maximum number of functions
 
-    def __init__(self, functions, *args, **kwargs):
+    def __init__(self, functions=None, *args, **kwargs):
         if functions is None:
-            functions = tuple()
+            functions = (lambda x: x, )
         elif isinstance(functions, str) or callable(functions):
             functions = (functions,)
         elif isinstance(functions, dict):
             functions = functions
         else:
             functions = tuple(functions)
+
+        n = len(functions)
+
+        if n > self.n_functions:
+            raise ValueError(
+                "{} expected {} function(s) got {}".format(
+                    self.__class__.__name__, self.n_functions, n
+                )
+            )
 
         self.set_env_from_verb_init()
         self.functions = functions
@@ -599,16 +610,26 @@ class _if(DataOperator):
         passed to *all* functions.
     """
     selector = '_if'
+    n_functions = MANY   # Maximum number of functions
 
     def __init__(self, predicate, functions=None, *args, **kwargs):
         if functions is None:
-            functions = tuple()
+            functions = (lambda x: x, )
         elif isinstance(functions, str) or callable(functions):
             functions = (functions,)
         elif isinstance(functions, dict):
             functions = functions
         else:
             functions = tuple(functions)
+
+        n = len(functions)
+
+        if n > self.n_functions:
+            raise ValueError(
+                "{} expected {} function(s) got {}".format(
+                    self.__class__.__name__, self.n_functions, n
+                )
+            )
 
         self.set_env_from_verb_init()
         self.predicate = predicate
@@ -664,8 +685,9 @@ class _at(select):
         passed to *all* functions.
     """
     selector = '_at'
+    n_functions = MANY   # Maximum number of functions
 
-    def __init__(self, names, functions, *args, **kwargs):
+    def __init__(self, names, functions=None, *args, **kwargs):
         # Sort out the arguments to select
         if isinstance(names, (tuple, list)):
             args_select = names
@@ -681,13 +703,22 @@ class _at(select):
                 "Unexpected type for the names specification.")
 
         if functions is None:
-            functions = tuple()
+            functions = (lambda x: x, )
         elif isinstance(functions, str) or callable(functions):
             functions = (functions,)
         elif isinstance(functions, dict):
             functions = functions
         else:
             functions = tuple(functions)
+
+        n = len(functions)
+
+        if n > self.n_functions:
+            raise ValueError(
+                "{} expected {} function(s) got {}".format(
+                    self.__class__.__name__, self.n_functions, n
+                )
+            )
 
         self.set_env_from_verb_init()
         super().__init__(*args_select, **kwargs_select)
@@ -725,6 +756,9 @@ class arrange_all(_all):
     args : tuple
         Arguments to the functions. The arguments are pass to *all*
         functions.
+    reset_index : bool, optional (default: True)
+        If ``True``, the index is reset to a sequential range index.
+        If ``False``, the original index is maintained.
     kwargs : dict
         Keyword arguments to the functions. The keyword arguments are
         passed to *all* functions.
@@ -747,34 +781,41 @@ class arrange_all(_all):
 
     >>> df >> arrange_all()
       alpha beta theta  x  y   z
-    1     a    a     d  2  5   9
-    0     a    b     c  1  6   7
+    0     a    a     d  2  5   9
+    1     a    b     c  1  6   7
     2     a    b     e  3  4  11
-    5     b    q     e  6  1  12
-    3     b    r     c  4  3   8
-    4     b    u     d  5  2  10
+    3     b    q     e  6  1  12
+    4     b    r     c  4  3   8
+    5     b    u     d  5  2  10
 
     Arranging in descending order.
 
     >>> df >> arrange_all(pd.Series.rank, ascending=False)
       alpha beta theta  x  y   z
-    4     b    u     d  5  2  10
-    3     b    r     c  4  3   8
-    5     b    q     e  6  1  12
-    2     a    b     e  3  4  11
-    0     a    b     c  1  6   7
-    1     a    a     d  2  5   9
+    0     b    u     d  5  2  10
+    1     b    r     c  4  3   8
+    2     b    q     e  6  1  12
+    3     a    b     e  3  4  11
+    4     a    b     c  1  6   7
+    5     a    a     d  2  5   9
 
-    Note
-    ----
+    Notes
+    -----
     Do not use functions that change the order of the values in the
     array. Such functions are most likely the wrong candidates,
     they corrupt the data. Use function(s) that return values that
     can be sorted.
     """
 
-    def __init__(self, functions=None, *args, **kwargs):
+    def __init__(
+        self,
+        functions=None,
+        *args,
+        reset_index=True,
+        **kwargs
+    ):
         self.set_env_from_verb_init()
+        self.reset_index = reset_index
         super().__init__(functions, *args, **kwargs)
 
 
@@ -838,6 +879,9 @@ class arrange_if(_if):
     args : tuple
         Arguments to the functions. The arguments are pass to *all*
         functions.
+    reset_index : bool, optional (default: True)
+        If ``True``, the index is reset to a sequential range index.
+        If ``False``, the original index is maintained.
     kwargs : dict
         Keyword arguments to the functions. The keyword arguments are
         passed to *all* functions.
@@ -860,43 +904,54 @@ class arrange_if(_if):
 
     >>> df >> arrange_if('is_string')
       alpha beta theta  x  y   z
-    1     a    a     d  2  5   9
-    0     a    b     c  1  6   7
+    0     a    a     d  2  5   9
+    1     a    b     c  1  6   7
     2     a    b     e  3  4  11
-    5     b    q     e  6  1  12
-    3     b    r     c  4  3   8
-    4     b    u     d  5  2  10
+    3     b    q     e  6  1  12
+    4     b    r     c  4  3   8
+    5     b    u     d  5  2  10
 
     Arranging by the columns with strings in descending order.
 
     >>> df >> arrange_if('is_string', pd.Series.rank, ascending=False)
       alpha beta theta  x  y   z
-    4     b    u     d  5  2  10
-    3     b    r     c  4  3   8
-    5     b    q     e  6  1  12
-    2     a    b     e  3  4  11
-    0     a    b     c  1  6   7
-    1     a    a     d  2  5   9
+    0     b    u     d  5  2  10
+    1     b    r     c  4  3   8
+    2     b    q     e  6  1  12
+    3     a    b     e  3  4  11
+    4     a    b     c  1  6   7
+    5     a    a     d  2  5   9
 
     It is easier to sort by only the numeric columns in descending
     order.
 
     >>> df >> arrange_if('is_numeric', np.negative)
       alpha beta theta  x  y   z
-    5     b    q     e  6  1  12
-    4     b    u     d  5  2  10
-    3     b    r     c  4  3   8
-    2     a    b     e  3  4  11
-    1     a    a     d  2  5   9
-    0     a    b     c  1  6   7
+    0     b    q     e  6  1  12
+    1     b    u     d  5  2  10
+    2     b    r     c  4  3   8
+    3     a    b     e  3  4  11
+    4     a    a     d  2  5   9
+    5     a    b     c  1  6   7
 
-    Note
-    ----
+    Notes
+    -----
     Do not use functions that change the order of the values in the
     array. Such functions are most likely the wrong candidates,
     they corrupt the data. Use function(s) that return values that
     can be sorted.
     """
+    def __init__(
+        self,
+        predicate,
+        functions=None,
+        *args,
+        reset_index=True,
+        **kwargs
+    ):
+        self.set_env_from_verb_init()
+        self.reset_index = reset_index
+        super().__init__(predicate, functions, *args, **kwargs)
 
 
 class arrange_at(_at):
@@ -944,6 +999,9 @@ class arrange_at(_at):
     args : tuple
         Arguments to the functions. The arguments are pass to *all*
         functions.
+    reset_index : bool, optional (default: True)
+        If ``True``, the index is reset to a sequential range index.
+        If ``False``, the original index is maintained.
     kwargs : dict
         Keyword arguments to the functions. The keyword arguments are
         passed to *all* functions.
@@ -979,12 +1037,12 @@ class arrange_at(_at):
 
     >>> df >> arrange_at(dict(contains='eta'))
       alpha beta theta  x  y   z
-    1     a    a     d  2  5   9
-    0     a    b     c  1  6   7
+    0     a    a     d  2  5   9
+    1     a    b     c  1  6   7
     2     a    b     e  3  4  11
-    5     b    q     e  6  1  12
-    3     b    r     c  4  3   8
-    4     b    u     d  5  2  10
+    3     b    q     e  6  1  12
+    4     b    r     c  4  3   8
+    5     b    u     d  5  2  10
 
     In descending order.
 
@@ -994,22 +1052,30 @@ class arrange_at(_at):
     ...     pd.Series.rank, ascending=False)
     ... )
       alpha beta theta  x  y   z
-    4     b    u     d  5  2  10
-    3     b    r     c  4  3   8
-    5     b    q     e  6  1  12
-    2     a    b     e  3  4  11
-    0     a    b     c  1  6   7
-    1     a    a     d  2  5   9
+    0     b    u     d  5  2  10
+    1     b    r     c  4  3   8
+    2     b    q     e  6  1  12
+    3     a    b     e  3  4  11
+    4     a    b     c  1  6   7
+    5     a    a     d  2  5   9
 
-    Note
-    ----
+    Notes
+    -----
     Do not use functions that change the order of the values in the
     array. Such functions are most likely the wrong candidates,
     they corrupt the data. Use function(s) that return values that
     can be sorted.
     """
-    def __init__(self, names, functions=None, *args, **kwargs):
+    def __init__(
+        self,
+        names,
+        functions=None,
+        *args,
+        reset_index=True,
+        **kwargs
+    ):
         self.set_env_from_verb_init()
+        self.reset_index = reset_index
         super().__init__(names, functions, *args, **kwargs)
 
 
@@ -1655,7 +1721,7 @@ class group_by_at(_at):
     group columns.
 
     >>> def double(s): return s + s
-    >>> df >> group_by_at(dict(matches=r'\w+eta$'), double)
+    >>> df >> group_by_at(dict(matches=r'\\w+eta$'), double)
     groups: ['beta', 'theta']
       alpha beta theta  x  y   z
     0     a   bb    cc  1  6   7
@@ -2054,6 +2120,9 @@ class query_all(_all):
 
         After the statement is evaluated for all columns, the
         *intersection* (``&``), is used to select the output rows.
+    reset_index : bool, optional (default: True)
+        If ``True``, the index is reset to a sequential range index.
+        If ``False``, the original index is maintained.
 
     Examples
     --------
@@ -2074,8 +2143,8 @@ class query_all(_all):
 
     >>> df >> query_all(any_vars='({_} == 4)')
       alpha beta theta  x  y   z
-    2     a    b     e  3  4  11
-    3     b    r     c  4  3   8
+    0     a    b     e  3  4  11
+    1     b    r     c  4  3   8
 
     The opposit, select all rows where none of the entries along
     the columns is a 4.
@@ -2084,8 +2153,8 @@ class query_all(_all):
       alpha beta theta  x  y   z
     0     a    b     c  1  6   7
     1     a    a     d  2  5   9
-    4     b    u     d  5  2  10
-    5     b    q     e  6  1  12
+    2     b    u     d  5  2  10
+    3     b    q     e  6  1  12
 
     For something more complicated, group-wise selection.
 
@@ -2106,9 +2175,9 @@ class query_all(_all):
     ...  >> query_all(any_vars='(sum({_}) > 28)'))
     groups: ['alpha']
       alpha  x  y   z
-    3     b  4  3   8
-    4     b  5  2  10
-    5     b  6  1  12
+    0     b  4  3   8
+    1     b  5  2  10
+    2     b  6  1  12
 
     Note that ``sum({_}) > 28`` is a column operation, it returns
     a single number for the whole column. Therefore the whole column
@@ -2117,8 +2186,15 @@ class query_all(_all):
     """
     vars_predicate = None
 
-    def __init__(self, *, all_vars=None, any_vars=None):
+    def __init__(
+        self,
+        *,
+        all_vars=None,
+        any_vars=None,
+        reset_index=True,
+    ):
         self.set_env_from_verb_init()
+        self.reset_index = reset_index
         if all_vars and any_vars:
             raise ValueError(
                 "Only one of `all_vars` or `any_vars` should "
@@ -2192,6 +2268,9 @@ class query_if(_if):
 
         After the statement is evaluated for all columns selected by the
         predicate, *intersection* (``&``), is used to select the output rows.
+    reset_index : bool, optional (default: True)
+        If ``True``, the index is reset to a sequential range index.
+        If ``False``, the original index is maintained.
 
     Examples
     --------
@@ -2212,8 +2291,8 @@ class query_if(_if):
 
     >>> df >> query_if('is_integer', any_vars='({_} == 4)')
       alpha beta theta  x  y   z
-    2     a    b     e  3  4  11
-    3     b    r     c  4  3   8
+    0     a    b     e  3  4  11
+    1     b    r     c  4  3   8
 
     The opposite, select all rows where none of the entries along
     the integer columns is a 4.
@@ -2222,8 +2301,8 @@ class query_if(_if):
       alpha beta theta  x  y   z
     0     a    b     c  1  6   7
     1     a    a     d  2  5   9
-    4     b    u     d  5  2  10
-    5     b    q     e  6  1  12
+    2     b    u     d  5  2  10
+    3     b    q     e  6  1  12
 
     For something more complicated, group-wise selection.
 
@@ -2242,9 +2321,9 @@ class query_if(_if):
     ...  >> query_if('is_integer', any_vars='(sum({_}) > 28)'))
     groups: ['alpha']
       alpha beta theta  x  y   z
-    3     b    r     c  4  3   8
-    4     b    u     d  5  2  10
-    5     b    q     e  6  1  12
+    0     b    r     c  4  3   8
+    1     b    u     d  5  2  10
+    2     b    q     e  6  1  12
 
     Note that ``sum({_}) > 28`` is a column operation, it returns
     a single number for the whole column. Therefore the whole column
@@ -2253,9 +2332,17 @@ class query_if(_if):
     """
     vars_predicate = None
 
-    def __init__(self, predicate, *, all_vars=None, any_vars=None):
+    def __init__(
+        self,
+        predicate,
+        *,
+        all_vars=None,
+        any_vars=None,
+        reset_index=True
+    ):
         self.set_env_from_verb_init()
         self.predicate = predicate
+        self.reset_index = reset_index
 
         if all_vars and any_vars:
             raise ValueError(
@@ -2317,6 +2404,9 @@ class query_at(_at):
         After the statement is evaluated for all columns selected by the
         *names* specification, *intersection* (``&``), is used to select
         the output rows.
+    reset_index : bool, optional (default: True)
+        If ``True``, the index is reset to a sequential range index.
+        If ``False``, the original index is maintained.
 
     Examples
     --------
@@ -2337,8 +2427,8 @@ class query_at(_at):
 
     >>> df >> query_at(('x', 'y', 'z'), any_vars='({_} == 4)')
       alpha beta theta  x  y   z
-    2     a    b     e  3  4  11
-    3     b    r     c  4  3   8
+    0     a    b     e  3  4  11
+    1     b    r     c  4  3   8
 
     The opposit, select all rows where none of the entries along
     the integer columns is a 4.
@@ -2347,8 +2437,8 @@ class query_at(_at):
       alpha beta theta  x  y   z
     0     a    b     c  1  6   7
     1     a    a     d  2  5   9
-    4     b    u     d  5  2  10
-    5     b    q     e  6  1  12
+    2     b    u     d  5  2  10
+    3     b    q     e  6  1  12
 
     For something more complicated, group-wise selection.
 
@@ -2367,9 +2457,9 @@ class query_at(_at):
     ...  >> query_at(('x', 'y', 'z'), any_vars='(sum({_}) > 28)'))
     groups: ['alpha']
       alpha beta theta  x  y   z
-    3     b    r     c  4  3   8
-    4     b    u     d  5  2  10
-    5     b    q     e  6  1  12
+    0     b    r     c  4  3   8
+    1     b    u     d  5  2  10
+    2     b    q     e  6  1  12
 
     Note that ``sum({_}) > 28`` is a column operation, it returns
     a single number for the whole column. Therefore the whole column
@@ -2377,7 +2467,14 @@ class query_at(_at):
     enable group-wise selection.
     """
 
-    def __init__(self, names, *, all_vars=None, any_vars=None):
+    def __init__(
+        self,
+        names,
+        *,
+        all_vars=None,
+        any_vars=None,
+        reset_index=True
+    ):
         if all_vars and any_vars:
             raise ValueError(
                 "Only one of `all_vars` or `any_vars` should "
@@ -2396,6 +2493,7 @@ class query_at(_at):
                 "One of `all_vars` or `any_vars` should be given.")
 
         self.set_env_from_verb_init()
+        self.reset_index = reset_index
         super().__init__(names, tuple())
 
 
@@ -2407,20 +2505,8 @@ class rename_all(_all):
     ----------
     data : dataframe, optional
         Useful when not using the ``>>`` operator.
-    functions : callable or tuple or dict or str
-        Functions to alter the columns:
-
-            - function (any callable) - Function is applied to the
-              column and the result columns replace the original
-              columns.
-            - :class:`tuple` of functions - Each function is applied to
-              all of the columns and the name (``__name__``) of the
-              function is postfixed to resulting column names.
-            - :class:`dict` of the form ``{'name': function}`` - Allows
-              you to apply one or more functions and also control the
-              postfix to the name.
-            - :class:`str` - String can be used for more complex
-              statements, but the resulting names will be terrible.
+    functions : callable
+        Useful when not using the ``>>`` operator.
 
     args : tuple
         Arguments to the functions. The arguments are pass to *all*
@@ -2466,6 +2552,7 @@ class rename_all(_all):
     4     b    u     d  5  2  10
     5     b    q     e  6  1  12
     """
+    n_functions = 1
 
 
 class rename_if(_if):
@@ -2507,21 +2594,8 @@ class rename_if(_if):
             'is_unsigned_integer' # pandas.api.types.is_unsigned_integer_dtype
 
         No other string values are allowed.
-    functions : callable or tuple or dict or str
-        Functions to alter the columns:
-
-            - function (any callable) - Function is applied to the
-              column and the result columns replace the original
-              columns.
-            - :class:`tuple` of functions - Each function is applied to
-              all of the columns and the name (``__name__``) of the
-              function is postfixed to resulting column names.
-            - :class:`dict` of the form ``{'name': function}`` - Allows
-              you to apply one or more functions and also control the
-              postfix to the name.
-            - :class:`str` - String can be used for more complex
-              statements, but the resulting names will be terrible.
-
+    functions : callable
+        Useful when not using the ``>>`` operator.
     args : tuple
         Arguments to the functions. The arguments are pass to *all*
         functions.
@@ -2570,6 +2644,7 @@ class rename_if(_if):
     4     b    u     d  5  2  10
     5     b    q     e  6  1  12
     """
+    n_functions = 1
 
 
 class rename_at(_at):
@@ -2596,21 +2671,8 @@ class rename_at(_at):
         - drop : bool, optional
             If ``True``, the selection is inverted. The unspecified/unmatched
             columns are returned instead. Default is ``False``.
-    functions : callable or tuple or dict or str
-        Functions to alter the columns:
-
-            - function (any callable) - Function is applied to the
-              column and the result columns replace the original
-              columns.
-            - :class:`tuple` of functions - Each function is applied to
-              all of the columns and the name (``__name__``) of the
-              function is postfixed to resulting column names.
-            - :class:`dict` of the form ``{'name': function}`` - Allows
-              you to apply one or more functions and also control the
-              postfix to the name.
-            - :class:`str` - String can be used for more complex
-              statements, but the resulting names will be terrible.
-
+    function : callable
+        Function to rename the column(s).
     args : tuple
         Arguments to the functions. The arguments are pass to *all*
         functions.
@@ -2657,6 +2719,7 @@ class rename_at(_at):
     4     b    u     d  5  2  10
     5     b    q     e  6  1  12
     """
+    n_functions = 1
 
 
 class select_all(_all):
@@ -2667,21 +2730,8 @@ class select_all(_all):
     ----------
     data : dataframe, optional
         Useful when not using the ``>>`` operator.
-    functions : callable or tuple or dict or str
-        Functions to alter the columns:
-
-            - function (any callable) - Function is applied to the
-              column and the result columns replace the original
-              columns.
-            - :class:`tuple` of functions - Each function is applied to
-              all of the columns and the name (``__name__``) of the
-              function is postfixed to resulting column names.
-            - :class:`dict` of the form ``{'name': function}`` - Allows
-              you to apply one or more functions and also control the
-              postfix to the name.
-            - :class:`str` - String can be used for more complex
-              statements, but the resulting names will be terrible.
-
+    function : callable
+        Function to rename the column(s).
     args : tuple
         Arguments to the functions. The arguments are pass to *all*
         functions.
@@ -2725,6 +2775,7 @@ class select_all(_all):
     4    u     b     d  5  2  10
     5    q     b     e  6  1  12
     """
+    n_functions = 1
 
 
 class select_if(_if):
@@ -2766,21 +2817,8 @@ class select_if(_if):
             'is_unsigned_integer' # pandas.api.types.is_unsigned_integer_dtype
 
         No other string values are allowed.
-    functions : callable or tuple or dict or str
-        Functions to alter the columns:
-
-            - function (any callable) - Function is applied to the
-              column and the result columns replace the original
-              columns.
-            - :class:`tuple` of functions - Each function is applied to
-              all of the columns and the name (``__name__``) of the
-              function is postfixed to resulting column names.
-            - :class:`dict` of the form ``{'name': function}`` - Allows
-              you to apply one or more functions and also control the
-              postfix to the name.
-            - :class:`str` - String can be used for more complex
-              statements, but the resulting names will be terrible.
-
+    function : callable
+        Function to rename the column(s).
     args : tuple
         Arguments to the functions. The arguments are pass to *all*
         functions.
@@ -2830,6 +2868,7 @@ class select_if(_if):
     4    u     b  5
     5    q     b  6
     """
+    n_functions = 1
 
 
 class select_at(_at):
@@ -2857,21 +2896,8 @@ class select_at(_at):
             If ``True``, the selection is inverted. The unspecified/unmatched
             columns are returned instead. Default is ``False``.
 
-    functions : callable or tuple or dict or str
-        Functions to alter the columns:
-
-            - function (any callable) - Function is applied to the
-              column and the result columns replace the original
-              columns.
-            - :class:`tuple` of functions - Each function is applied to
-              all of the columns and the name (``__name__``) of the
-              function is postfixed to resulting column names.
-            - :class:`dict` of the form ``{'name': function}`` - Allows
-              you to apply one or more functions and also control the
-              postfix to the name.
-            - :class:`str` - String can be used for more complex
-              statements, but the resulting names will be terrible.
-
+    function : callable
+        Functions to rename the column(s).
     args : tuple
         Arguments to the functions. The arguments are pass to *all*
         functions.
@@ -2928,6 +2954,7 @@ class select_at(_at):
     4    u     b  5
     5    q     b  6
     """
+    n_functions = 1
 
 
 class summarize_all(_all):

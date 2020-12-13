@@ -13,8 +13,10 @@ Documentation (Release)      |documentation_stable|_
 
 plydata is a library that provides a grammar for data manipulation.
 The grammar consists of verbs that can be applied to pandas
-dataframes or database tables. It is based on the R package
-`dplyr`_. plydata uses the `>>` operator as a pipe symbol.
+dataframes or database tables. It is based on the R packages
+`dplyr`_, `tidyr`_ and `forcats`_. plydata uses the ``>>`` operator
+as a pipe symbol, alternatively there is the ``ply(data, *verbs)``
+function that you can use instead of ``>>``.
 
 At present the only supported data store is the *pandas* dataframe.
 We expect to support *sqlite* and maybe *postgresql* and *mysql*.
@@ -44,7 +46,10 @@ Example
 
     import pandas as pd
     import numpy as np
-    from plydata import define, query
+    from plydata import define, query, if_else, ply
+
+    # NOTE: query is the equivalent of dplyr's filter but with
+    #      slightly different python syntax  for the expressions
 
     df = pd.DataFrame({
         'x': [0, 1, 2, 3],
@@ -69,12 +74,24 @@ Example
     """
 
     # You can pass the dataframe as the # first argument
-    query(df, 'x > 1')  # same as `df >> query('x > 2')`
+    query(df, 'x > 1')  # same as `df >> query('x > 1')`
     """
        x      y
     2  2    two
     3  3  three
     """
+
+    # You can use the ply function instead of the >> operator
+    ply(df,
+        define(z=if_else('x > 1', 1, 0)),
+        query('z == 1')
+    )
+    """
+        x      y  z
+     2  2    two  1
+     3  3  three  1
+    """
+
 
 plydata piping works with `plotnine`_.
 
@@ -114,11 +131,11 @@ For more, see the documentation_.
 .. |license| image:: https://img.shields.io/pypi/l/plydata.svg
 .. _license: https://pypi.python.org/pypi/plydata
 
-.. |buildstatus| image:: https://api.travis-ci.org/has2k1/plydata.svg?branch=master
-.. _buildstatus: https://travis-ci.org/has2k1/plydata
+.. |buildstatus| image:: https://github.com/has2k1/plydata/workflows/build/badge.svg?branch=master
+.. _buildstatus: https://github.com/has2k1/plydata/actions?query=branch%3Amaster+workflow%3A%22build%22
 
-.. |coverage| image:: https://coveralls.io/repos/github/has2k1/plydata/badge.svg?branch=master
-.. _coverage: https://coveralls.io/github/has2k1/plydata?branch=master
+.. |coverage| image:: https://codecov.io /github/has2k1/plydata/coverage.svg?branch=master
+.. _coverage: https://codecov.io/github/has2k1/plydata?branch=master
 
 .. |documentation| image:: https://readthedocs.org/projects/plydata/badge/?version=latest
 .. _documentation: https://plydata.readthedocs.io/en/latest/
@@ -126,7 +143,9 @@ For more, see the documentation_.
 .. |documentation_stable| image:: https://readthedocs.org/projects/plydata/badge/?version=stable
 .. _documentation_stable: https://plydata.readthedocs.io/en/stable/
 
-.. _dplyr: http://github.com/hadley/dplyr
+.. _dplyr: https://github.com/tidyverse/dplyr
+.. _tidyr: https://github.com/tidyverse/tidyr
+.. _forcats: https://github.com/tidyverse/forcats
 .. _pandas-ply: https://github.com/coursera/pandas-ply
 .. _dplython: https://github.com/dodger487/dplython
-.. _plotnine: http://plotnine.readthedocs.io/en/stable/
+.. _plotnine: https://plotnine.readthedocs.io/en/stable/
